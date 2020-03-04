@@ -5,6 +5,7 @@ import time
 
 
 """
+    author: Conastin
     version:1.2
     function:
         1. 自动登录答题系统
