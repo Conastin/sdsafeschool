@@ -6,25 +6,24 @@ import time
 
 """
     author: Conastin
-    version:1.2
+    version: 1.3
     function:
-        1. 自动登录答题系统
-        2. 自动完成答题
-        3. 自动获取答题结果及其他信息
+        1. 自动识别账号密码
+        2. 自动登录答题系统
+        3. 账号密码验证
+        4. 自动完成答题
+        5. 试题库自动更新
+        6. 自动获取答题结果及其他信息
     update:
-        1. 增加账号密码验证功能
-        2. 增加试题库自动更新功能
+        1. 测试获取考试信息
+        2. 账号密码自动识别功能
+            可识别文本类型：
+                1. [任一中文/字符/空白][手机号] [除0~9,a~z,A~Z,.字符][密码]
+                2. [任一中文/字符/空白][手机号]
+                   [除0~9,a~z,A~Z,.字符][密码]
 """
-
-sch_id = '' #这里输入学校id
-shouji = '' #这里输入手机号
-mima = '' #这里输入密码
-daan = []
-shouji_dict = {}
-itemdict = {}
-
-#获取试题库
-def getItemexam(itemdict:dict):
+# 获取试题库
+def getItemexam(itemdict:dict)->dict:
     # 读取本地题库
     try:
         # 读取题库
@@ -34,12 +33,16 @@ def getItemexam(itemdict:dict):
         f.close()
         print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
         print('题库数量：', len(itemdict))
-    except FileNotFoundError:
-        updateItems(itemdict)
 
-#更新试题库
-def updateItems(itemdict:dict):
+    except FileNotFoundError:
+        itemdict = updateItems(0, itemdict)
+    finally:
+        return itemdict
+
+# 更新试题库
+def updateItems(key:int,itemdict:dict)->dict:
     # 更新题库
+    # key=1不输出
     timeout = 0
     url_test = 'http://exam.sdsafeschool.gov.cn/m_mokao.php'
     while True:
@@ -55,14 +58,16 @@ def updateItems(itemdict:dict):
                 if not title[3::] in itemdict:
                     timeout = 0
                     itemdict.update({title[3::]: answer})
-                    print(title[3::], answer)
+                    if key == 0:
+                        print(title[3::], answer)
                 else:
                     timeout += 1
             else:
                 if not title[2::] in itemdict:
                     timeout = 0
                     itemdict.update({title[2::]: answer})
-                    print(title[2::], answer)
+                    if key == 0:
+                        print(title[2::], answer)
                 else:
                     timeout += 1
             num += 1
@@ -74,7 +79,53 @@ def updateItems(itemdict:dict):
             print('更新题库成功！')
             print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
             print('题库数量：', len(itemdict))
-            break
+            return itemdict
+
+# 保存手机号
+def savePhonenumber(shouji_dict:dict):
+    f = open("shouji.txt", 'r')
+    #itemdict导入变量题库字典
+    shouji_dict = eval(f.read())
+    f.close()
+    if not shouji in shouji_dict:
+        shouji_dict.update({shouji: mima})
+    f = open('shouji.txt', 'w')
+    f.write(str(shouji_dict))
+    f.close()
+    print('保存手机成功！\n\t共存有', len(shouji_dict), '个手机号码')
+
+# 获取手机号及密码
+def getShoujiMima()->str:
+    stopword = ''  # 修改输入终止符为空行
+    text = ''
+    shouji = ''
+    mima = ''
+    for line in iter(input, stopword):
+        text += line
+    num = 0
+    while num < len(text):
+        if shouji == '':
+            if text[num] == '1':
+                shouji = text[num:num + 11]
+                num += 10
+        else:
+            if 'a' <= text[num] <= 'z' or 'A' <= text[num] <= 'Z' or '0' <= text[num] <= '9':
+                mima = text[num::]
+                break
+        num += 1
+    return shouji, mima
+
+# 读取手机号及密码
+shouji, mima = getShoujiMima()
+print('\n\t手机号：', shouji, '\n\t密码：', mima)
+# 参数配置区域
+sch_id = '187'  # 这里输入学校id
+# shouji = ''  # 手机号备用
+# mima = ''  # 密码备用
+daan = []
+shouji_dict = {}
+itemdict = {}
+# ---------------------------------------------------------------------------------
 
 # post登录
 session = requests.session()
@@ -92,9 +143,12 @@ data = {
 }
 # 登录
 session.post(url_login, headers=headers, data=data)
-#读取题库
-getItemexam(itemdict)
-#开始考试
+# 记录手机
+shouji_dict.update({shouji: mima})
+savePhonenumber(shouji_dict)
+# 读取题库
+itemdict = getItemexam(itemdict)
+# 开始考试
 headers = {
     'Referer': 'http://exam.sdsafeschool.gov.cn/m_kaoshi_log.php?from_url=m_kaoshi_log.php',
     'Host': 'exam.sdsafeschool.gov.cn',
@@ -107,11 +161,18 @@ examurl = 'http://exam.sdsafeschool.gov.cn/m_kaoshi.php' #考试url
 indexurl = 'http://exam.sdsafeschool.gov.cn/m_kaoshi_log.php?from_url=m_kaoshi_log.php' #获取信息界面
 exampage = session.get(indexurl, headers=headers)
 check = BeautifulSoup(exampage.content, 'html.parser')
-#利用提示框判断密码正误
+# 利用提示框判断密码正误
 try:
     print(check.find(class_='tishikuang').text)
 except:
     print('密码错误, 请输入正确账号密码')
+historyExam = check.find_all(class_='green')
+for i in historyExam:
+    print(i.parent.text[6:10])
+    print('\t开始时间：' + i.parent.text[10:29])
+    print('\t结束时间：' + i.parent.text[32:51])
+    print('\t成绩：' + i.parent.text[55::])
+# 判断
 if '很遗憾，你没有通过考试。' == check.find(class_='tishikuang').text:
     print('你没机会了')
 elif '恭喜，你已通过考试。' == check.find(class_='tishikuang').text[0:10]:
@@ -119,11 +180,11 @@ elif '恭喜，你已通过考试。' == check.find(class_='tishikuang').text[0:
 else:
     exampage = session.get(examurl, headers=headers)
     page = BeautifulSoup(exampage.content, 'html.parser')
-    #获取sa sf di
+    # 获取sa sf di
     sa = re.search("sa:'(.*)'", page.text).group(1)
     sf = re.search("sf:'(.*)'", page.text).group(1)
     di = re.search("di:'(.*)'", page.text).group(1)
-    #获取答案
+    # 获取答案
     for i in page.find_all(class_='ti'):
         item = i.find(class_='title').text
         key = 1
@@ -136,10 +197,11 @@ else:
                 # 题可以找到
                 key = 0
             except:
-                #题找不到 更新题库
+                # 题找不到 更新题库
+                print('')
                 print('试题库已更新 正在更新题库...')
-                updateItems(itemdict)
-    #格式化答案 ya
+                updateItems(1, itemdict)
+    # 格式化答案 ya
     num = 1
     ya = ''
     for i in daan:
@@ -148,7 +210,7 @@ else:
         else:
             ya += '"' + i + '",'
         num += 1
-    #提交答案
+    # 提交答案
     post_url = 'http://exam.sdsafeschool.gov.cn/m_kaoshi_save.php'
     headers = {
         'Referer': 'http://exam.sdsafeschool.gov.cn/m_kaoshi.php',
@@ -166,6 +228,7 @@ else:
         'sa': sa,
         'sf': sf
     }
+    print(ya)
     res = session.post(post_url, headers=headers, data=data)
     if res.status_code == 200:
         print('已成功')
