@@ -6,7 +6,7 @@ import time
 
 """
     author: Conastin
-    version: 1.3
+    version: 2.0
     function:
         1. 自动识别账号密码
         2. 自动登录答题系统
@@ -15,13 +15,15 @@ import time
         5. 试题库自动更新
         6. 自动获取答题结果及其他信息
     update:
-        1. 测试获取考试信息
-        2. 账号密码自动识别功能
-            可识别文本类型：
-                1. [任一中文/字符/空白][手机号] [除0~9,a~z,A~Z,.字符][密码]
-                2. [任一中文/字符/空白][手机号]
-                   [除0~9,a~z,A~Z,.字符][密码]
+        1. 修复BUG, 提高程序容错性
 """
+
+# 参数配置区域
+sch_id = ''  # 这里输入学校id 手动输入
+# shouji = ''  # 手机号备用
+# mima = ''  # 密码备用
+
+
 # 获取试题库
 def getItemexam(itemdict:dict)->dict:
     # 读取本地题库
@@ -35,6 +37,7 @@ def getItemexam(itemdict:dict)->dict:
         print('题库数量：', len(itemdict))
 
     except FileNotFoundError:
+        print('请更新题库')
         itemdict = updateItems(0, itemdict)
     finally:
         return itemdict
@@ -71,7 +74,7 @@ def updateItems(key:int,itemdict:dict)->dict:
                 else:
                     timeout += 1
             num += 1
-        if timeout > 2500:
+        if timeout > 25000:
             # 存储
             f = open('dict.txt', 'w')
             f.write(str(itemdict))
@@ -80,19 +83,6 @@ def updateItems(key:int,itemdict:dict)->dict:
             print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
             print('题库数量：', len(itemdict))
             return itemdict
-
-# 保存手机号
-def savePhonenumber(shouji_dict:dict):
-    f = open("shouji.txt", 'r')
-    #itemdict导入变量题库字典
-    shouji_dict = eval(f.read())
-    f.close()
-    if not shouji in shouji_dict:
-        shouji_dict.update({shouji: mima})
-    f = open('shouji.txt', 'w')
-    f.write(str(shouji_dict))
-    f.close()
-    print('保存手机成功！\n\t共存有', len(shouji_dict), '个手机号码')
 
 # 获取手机号及密码
 def getShoujiMima()->str:
@@ -118,14 +108,11 @@ def getShoujiMima()->str:
 # 读取手机号及密码
 shouji, mima = getShoujiMima()
 print('\n\t手机号：', shouji, '\n\t密码：', mima)
-# 参数配置区域
-sch_id = '187'  # 这里输入学校id
-# shouji = ''  # 手机号备用
-# mima = ''  # 密码备用
 daan = []
-shouji_dict = {}
+titles = []
 itemdict = {}
-# ---------------------------------------------------------------------------------
+exam = {}
+
 
 # post登录
 session = requests.session()
@@ -143,9 +130,6 @@ data = {
 }
 # 登录
 session.post(url_login, headers=headers, data=data)
-# 记录手机
-shouji_dict.update({shouji: mima})
-savePhonenumber(shouji_dict)
 # 读取题库
 itemdict = getItemexam(itemdict)
 # 开始考试
@@ -191,16 +175,25 @@ else:
         while key==1:
             try:
                 if item[2] == ' ':
+                    titles.append(item[3::])
                     daan.append(itemdict[item[3::]])
                 else:
+                    titles.append(item[2::])
                     daan.append(itemdict[item[2::]])
                 # 题可以找到
                 key = 0
             except:
                 # 题找不到 更新题库
-                print('')
+                print('item找不到:', item)
                 print('试题库已更新 正在更新题库...')
-                updateItems(1, itemdict)
+                # updateItems(1, itemdict)
+
+    # 保存试题
+    for i in range(0, 25):
+        exam.update({titles[i]: daan[i]})
+    f = open('./exam/'+shouji+'exam.txt', 'w')
+    f.write(str(itemdict))
+    f.close()
     # 格式化答案 ya
     num = 1
     ya = ''
@@ -228,12 +221,15 @@ else:
         'sa': sa,
         'sf': sf
     }
-    print(ya)
     res = session.post(post_url, headers=headers, data=data)
     if res.status_code == 200:
         print('已成功')
     else:
         print('失败')
+
+    # 输出试题答案
+    # for i in exam:
+    #     print(exam[i], i)
     exampage = session.get(indexurl, headers=headers)
     check = BeautifulSoup(exampage.content, 'html.parser')
     print(check.find(class_='tishikuang').text)
